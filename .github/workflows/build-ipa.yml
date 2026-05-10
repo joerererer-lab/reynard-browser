@@ -19,7 +19,7 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Verify toolchain
+      - name: Verify toolchain (iOS + macOS SDKs)
         run: |
           echo "DEVELOPER_DIR=$DEVELOPER_DIR"
           xcode-select -p
@@ -29,6 +29,15 @@ jobs:
           echo "--- iOS SDK ---"
           xcrun --sdk iphoneos --show-sdk-path
           xcrun --sdk iphoneos --show-sdk-version
+          echo "--- macOS SDK ---"
+          xcrun --sdk macosx --show-sdk-path
+          xcrun --sdk macosx --show-sdk-version
+          echo "--- Platforms directory ---"
+          ls "$(xcode-select -p)/Platforms/"
+          echo "--- macOS SDKs available ---"
+          ls "$(xcode-select -p)/Platforms/MacOSX.platform/Developer/SDKs/" || echo "MISSING"
+          echo "--- iOS SDKs available ---"
+          ls "$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs/" || echo "MISSING"
 
       - name: Install ldid
         run: brew install ldid
@@ -70,7 +79,8 @@ jobs:
 
       - name: Build Gecko
         run: |
-          export SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
+          unset SDKROOT
+          echo "Letting mach auto-detect SDKs"
           ./tools/development/build-gecko.sh
 
       - name: Build Reynard.app
@@ -84,10 +94,21 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Package as IPA
+      - name: Package as IPA (with ldid pseudo-signing)
         run: |
           mkdir -p Payload
           cp -r build/Build/Products/Release-iphoneos/Reynard.app Payload/
+          # Pseudo-sign main executable
+          ldid -S Payload/Reynard.app/Reynard
+          # Pseudo-sign all bundled dylibs (Gecko ships several)
+          find Payload/Reynard.app -name "*.dylib" -exec ldid -S {} \;
+          # Pseudo-sign frameworks if any
+          find Payload/Reynard.app -name "*.framework" -type d | while read fw; do
+            fw_name=$(basename "$fw" .framework)
+            if [ -f "$fw/$fw_name" ]; then
+              ldid -S "$fw/$fw_name"
+            fi
+          done
           zip -r Reynard.ipa Payload
           ls -lh Reynard.ipa
 
