@@ -47,6 +47,9 @@ jobs:
         with:
           targets: aarch64-apple-ios
 
+      - name: Install cbindgen
+        run: cargo install cbindgen
+
       - name: Free up disk space
         run: |
           ACTIVE_XCODE=$(xcode-select -p | sed 's|/Contents/Developer||')
