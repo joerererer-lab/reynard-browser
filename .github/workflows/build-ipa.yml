@@ -9,13 +9,47 @@ jobs:
     timeout-minutes: 350
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select latest valid Xcode
+        run: |
+          echo "=== Listing /Applications/ ==="
+          ls -la /Applications/ | grep -i xcode || true
+          echo ""
+          echo "=== Searching for valid Xcode ==="
+          SELECTED=""
+          for candidate in $(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -Vr) /Applications/Xcode.app; do
+            echo "Checking: $candidate"
+            if [ -d "$candidate/Contents/Developer" ]; then
+              echo "  -> Valid, selecting this one"
+              sudo xcode-select -s "$candidate/Contents/Developer"
+              SELECTED="$candidate"
+              break
+            else
+              echo "  -> Invalid (no Contents/Developer)"
+            fi
+          done
+          if [ -z "$SELECTED" ]; then
+            echo "ERROR: No valid Xcode found on this runner!"
+            exit 1
+          fi
+          echo ""
+          echo "=== Selected Xcode info ==="
+          xcodebuild -version
+          echo ""
+          echo "=== iOS SDK version ==="
+          xcrun --sdk iphoneos --show-sdk-version
+
       - name: Free up disk space
         run: |
-          XCODES=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V)
-          LATEST=$(echo "$XCODES" | tail -1)
-          echo "Keeping: $LATEST"
-          for x in $XCODES; do
-            if [ "$x" != "$LATEST" ]; then
+          # Determine the Xcode we just selected so we don't delete it
+          ACTIVE_XCODE=$(xcode-select -p | sed 's|/Contents/Developer||')
+          echo "Active Xcode: $ACTIVE_XCODE"
+          for x in $(ls -d /Applications/Xcode_*.app 2>/dev/null); do
+            if [ "$x" != "$ACTIVE_XCODE" ]; then
               echo "Removing: $x"
               sudo rm -rf "$x"
             fi
@@ -23,23 +57,6 @@ jobs:
           sudo rm -rf ~/Library/Developer/CoreSimulator/Caches
           sudo xcrun simctl delete unavailable 2>/dev/null || true
           df -h /
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Select latest Xcode
-        run: |
-          ls /Applications/ | grep -i xcode
-          LATEST_XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
-          if [ -z "$LATEST_XCODE" ]; then
-            LATEST_XCODE="/Applications/Xcode.app"
-          fi
-          echo "Selecting $LATEST_XCODE"
-          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Install ldid
         run: brew install ldid
