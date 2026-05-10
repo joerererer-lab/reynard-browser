@@ -19,8 +19,16 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Install ldid
-        run: brew install ldid
+      - name: Install ldid and LLVM
+        run: |
+          brew install ldid llvm
+          echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+
+      - name: Verify lld is available
+        run: |
+          which lld || true
+          lld --version || true
+          ld.lld --version || true
 
       - name: Free up disk space
         run: |
