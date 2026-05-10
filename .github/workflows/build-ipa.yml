@@ -42,6 +42,18 @@ jobs:
           echo "WASM_CC=$LLVM_PREFIX/bin/clang" >> $GITHUB_ENV
           echo "WASM_CXX=$LLVM_PREFIX/bin/clang++" >> $GITHUB_ENV
 
+      - name: Install WASI Sysroot
+        run: |
+          # The WebAssembly compiler needs the WASI standard library headers (string.h, etc.)
+          curl -LO https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sysroot-20.0.tar.gz
+          
+          # Extract it into a guaranteed directory structure
+          mkdir -p $PWD/wasi-sysroot-dir
+          tar -xf wasi-sysroot-20.0.tar.gz -C $PWD/wasi-sysroot-dir --strip-components=1
+          
+          # Export the sysroot path so mach configure automatically picks it up
+          echo "WASI_SYSROOT=$PWD/wasi-sysroot-dir" >> $GITHUB_ENV
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -72,11 +84,6 @@ jobs:
           
           ./tools/development/update-gecko.sh
           ./tools/development/apply-patches.sh
-          
-          # We have the WASM compiler, but not the WASI sysroot headers.
-          # This flag tells Mozilla to skip building the WASM sandbox entirely.
-          echo "ac_add_options --without-wasm-sandboxed-libraries" >> engine/firefox/.mozconfig
-          
           ./tools/development/build-idevice.sh
           ./tools/development/build-gecko.sh
 
