@@ -36,6 +36,11 @@ jobs:
           # Inject ONLY our custom directory into PATH. 
           # This forces Mozilla to use lld, while preserving Apple's /usr/bin/clang!
           echo "$HOME/custom-linker" >> $GITHUB_PATH
+          
+          # Globally export the WASM compilers to the runner environment
+          # so Mozilla's configure scripts absolutely cannot ignore them
+          echo "WASM_CC=$LLVM_PREFIX/bin/clang" >> $GITHUB_ENV
+          echo "WASM_CXX=$LLVM_PREFIX/bin/clang++" >> $GITHUB_ENV
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -67,12 +72,6 @@ jobs:
           
           ./tools/development/update-gecko.sh
           ./tools/development/apply-patches.sh
-          
-          # Force Mozilla to use Homebrew's LLVM specifically for the WASM sandbox
-          # (Because Apple's /usr/bin/clang strips out the WebAssembly backend)
-          echo "export WASM_CC=$(brew --prefix llvm@18)/bin/clang" >> engine/firefox/.mozconfig
-          echo "export WASM_CXX=$(brew --prefix llvm@18)/bin/clang++" >> engine/firefox/.mozconfig
-          
           ./tools/development/build-idevice.sh
           ./tools/development/build-gecko.sh
 
