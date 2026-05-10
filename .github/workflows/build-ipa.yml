@@ -14,49 +14,21 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Select latest valid Xcode
-        run: |
-          echo "=== Listing /Applications/ ==="
-          ls -la /Applications/ | grep -i xcode || true
-          echo ""
-          echo "=== Searching for valid Xcode ==="
-          SELECTED=""
-          for candidate in $(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -Vr) /Applications/Xcode.app; do
-            echo "Checking: $candidate"
-            if [ -d "$candidate/Contents/Developer" ]; then
-              echo "  -> Valid, selecting this one"
-              sudo xcode-select -s "$candidate/Contents/Developer"
-              SELECTED="$candidate"
-              break
-            else
-              echo "  -> Invalid (no Contents/Developer)"
-            fi
-          done
-          if [ -z "$SELECTED" ]; then
-            echo "ERROR: No valid Xcode found on this runner!"
-            exit 1
-          fi
-          echo ""
-          echo "=== Selected Xcode info ==="
-          xcodebuild -version
-          echo ""
-          echo "=== iOS SDK version ==="
-          xcrun --sdk iphoneos --show-sdk-version
+      - name: Set up Xcode (latest stable)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
 
-      - name: Free up disk space
+      - name: Verify toolchain
         run: |
-          # Determine the Xcode we just selected so we don't delete it
-          ACTIVE_XCODE=$(xcode-select -p | sed 's|/Contents/Developer||')
-          echo "Active Xcode: $ACTIVE_XCODE"
-          for x in $(ls -d /Applications/Xcode_*.app 2>/dev/null); do
-            if [ "$x" != "$ACTIVE_XCODE" ]; then
-              echo "Removing: $x"
-              sudo rm -rf "$x"
-            fi
-          done
-          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches
-          sudo xcrun simctl delete unavailable 2>/dev/null || true
-          df -h /
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR"
+          xcode-select -p
+          xcodebuild -version
+          echo "--- Available SDKs ---"
+          xcodebuild -showsdks
+          echo "--- iOS SDK ---"
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Install ldid
         run: brew install ldid
@@ -66,8 +38,22 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Set up Rust
+      - name: Set up Rust with iOS target
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Free up disk space
+        run: |
+          ACTIVE_XCODE=$(xcode-select -p | sed 's|/Contents/Developer||')
+          echo "Keeping active Xcode: $ACTIVE_XCODE"
+          for x in $(ls -d /Applications/Xcode_*.app 2>/dev/null); do
+            if [ "$x" != "$ACTIVE_XCODE" ]; then
+              echo "Removing: $x"
+              sudo rm -rf "$x"
+            fi
+          done
+          df -h /
 
       - name: Update Gecko
         run: ./tools/development/update-gecko.sh
@@ -76,10 +62,16 @@ jobs:
         run: ./tools/development/apply-patches.sh
 
       - name: Build idevice
-        run: ./tools/development/build-idevice.sh
+        run: |
+          export SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
+          export IPHONEOS_DEPLOYMENT_TARGET=14.0
+          echo "SDKROOT=$SDKROOT"
+          ./tools/development/build-idevice.sh
 
       - name: Build Gecko
-        run: ./tools/development/build-gecko.sh
+        run: |
+          export SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
+          ./tools/development/build-gecko.sh
 
       - name: Build Reynard.app
         run: |
