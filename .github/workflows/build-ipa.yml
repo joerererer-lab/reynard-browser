@@ -19,23 +19,21 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Install ldid and LLVM 18
-        run: |
-          brew install ldid
-          brew install llvm@18
-          LLVM_PREFIX=$(brew --prefix llvm@18)
-          echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
-          if [ -f "$LLVM_PREFIX/bin/lld" ] && [ ! -e "$LLVM_PREFIX/bin/ld64.lld" ]; then
-            ln -sf "$LLVM_PREFIX/bin/lld" "$LLVM_PREFIX/bin/ld64.lld"
-          fi
+      # Just ldid, no LLVM overrides
+      - name: Install ldid
+        run: brew install ldid
 
-      - name: Remove CommandLineTools SDKs (force Xcode SDKs only)
-        run: |
-          sudo rm -rf /Library/Developer/CommandLineTools/SDKs
-          echo "Removed. Verifying only Xcode SDKs remain:"
-          ls /Library/Developer/CommandLineTools/ 2>/dev/null || echo "CommandLineTools dir gone (fine)"
-          xcrun --sdk iphoneos --show-sdk-path
-          xcrun --sdk macosx --show-sdk-path
+      # Restored from your original script (Required by Mozilla mach)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Restored from your original script (Required to compile Gecko)
+      - name: Set up Rust with iOS target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
 
       - name: Free up disk space
         run: |
@@ -49,6 +47,9 @@ jobs:
 
       - name: Run developer build steps
         run: |
+          # The fix to prevent max() iterable SDK detection errors in Mozilla's mach
+          unset SDKROOT
+          
           ./tools/development/update-gecko.sh
           ./tools/development/apply-patches.sh
           ./tools/development/build-idevice.sh
@@ -69,8 +70,11 @@ jobs:
         run: |
           mkdir -p Payload
           cp -r build/Build/Products/Release-iphoneos/Reynard.app Payload/
+          
+          # Sign binary and all dynamic libraries for sideloading
           ldid -S Payload/Reynard.app/Reynard
           find Payload/Reynard.app -name "*.dylib" -exec ldid -S {} \;
+          
           zip -r Reynard.ipa Payload
           ls -lh Reynard.ipa
 
