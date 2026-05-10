@@ -84,7 +84,23 @@ jobs:
 
       - name: Build Reynard.app
         run: |
-          xcodebuild -project Reynard.xcodeproj \
+          # 1. Dynamically locate the exact path of the Xcode project (handles subfolders and case-sensitivity)
+          PROJECT_PATH=$(find . -type d -iname "reynard.xcodeproj" | head -n 1)
+          
+          if [ -z "$PROJECT_PATH" ]; then
+            echo "Error: Could not find Reynard.xcodeproj anywhere in the repository."
+            echo "Here are the Xcode projects that DO exist:"
+            find . -type d -name "*.xcodeproj"
+            exit 1
+          fi
+          
+          echo "Found Xcode project at: $PROJECT_PATH"
+          
+          # 2. Print available schemes for debugging in case the scheme name is also different
+          xcodebuild -project "$PROJECT_PATH" -list
+          
+          # 3. Build the project using the dynamic path
+          xcodebuild -project "$PROJECT_PATH" \
             -scheme Reynard \
             -configuration Release \
             -sdk iphoneos \
@@ -98,10 +114,28 @@ jobs:
           mkdir -p Payload
           cp -r build/Build/Products/Release-iphoneos/Reynard.app Payload/
           
-          # Sign binary and all dynamic libraries for sideloading
-          ldid -S Payload/Reynard.app/Reynard
+          # 1. Create the entitlements file required for Gecko's JavaScript JIT compiler
+          cat << 'EOF' > entitlements.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>dynamic-codesigning</key>
+              <true/>
+              <key>get-task-allow</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          
+          # 2. Pseudo-sign the main browser executable WITH the JIT entitlements
+          # (Note: ldid requires no space between -S and the filename)
+          ldid -Sentitlements.xml Payload/Reynard.app/Reynard
+          
+          # 3. Sign all dynamic libraries bundled with the engine
           find Payload/Reynard.app -name "*.dylib" -exec ldid -S {} \;
           
+          # 4. Package it up
           zip -r Reynard.ipa Payload
           ls -lh Reynard.ipa
 
