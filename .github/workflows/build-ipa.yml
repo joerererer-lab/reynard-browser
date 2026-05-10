@@ -5,18 +5,23 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 350
 
     steps:
       - name: Free up disk space
         run: |
-          sudo rm -rf /Applications/Xcode_15.0.1.app
-          sudo rm -rf /Applications/Xcode_15.1.app
-          sudo rm -rf /Applications/Xcode_15.2.app
-          sudo rm -rf /Applications/Xcode_15.3.app
+          XCODES=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V)
+          LATEST=$(echo "$XCODES" | tail -1)
+          echo "Keeping: $LATEST"
+          for x in $XCODES; do
+            if [ "$x" != "$LATEST" ]; then
+              echo "Removing: $x"
+              sudo rm -rf "$x"
+            fi
+          done
           sudo rm -rf ~/Library/Developer/CoreSimulator/Caches
-          sudo xcrun simctl delete unavailable
+          sudo xcrun simctl delete unavailable 2>/dev/null || true
           df -h /
 
       - name: Checkout repository
@@ -25,7 +30,16 @@ jobs:
           submodules: recursive
 
       - name: Select latest Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: |
+          ls /Applications/ | grep -i xcode
+          LATEST_XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$LATEST_XCODE" ]; then
+            LATEST_XCODE="/Applications/Xcode.app"
+          fi
+          echo "Selecting $LATEST_XCODE"
+          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Install ldid
         run: brew install ldid
@@ -59,8 +73,7 @@ jobs:
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package as IPA
         run: |
