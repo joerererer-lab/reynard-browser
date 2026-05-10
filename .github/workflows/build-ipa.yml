@@ -72,6 +72,11 @@ jobs:
           
           ./tools/development/update-gecko.sh
           ./tools/development/apply-patches.sh
+          
+          # We have the WASM compiler, but not the WASI sysroot headers.
+          # This flag tells Mozilla to skip building the WASM sandbox entirely.
+          echo "ac_add_options --without-wasm-sandboxed-libraries" >> engine/firefox/.mozconfig
+          
           ./tools/development/build-idevice.sh
           ./tools/development/build-gecko.sh
 
