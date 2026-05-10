@@ -14,73 +14,29 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Set up Xcode (latest stable)
+      - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - name: Verify toolchain (iOS + macOS SDKs)
-        run: |
-          echo "DEVELOPER_DIR=$DEVELOPER_DIR"
-          xcode-select -p
-          xcodebuild -version
-          echo "--- Available SDKs ---"
-          xcodebuild -showsdks
-          echo "--- iOS SDK ---"
-          xcrun --sdk iphoneos --show-sdk-path
-          xcrun --sdk iphoneos --show-sdk-version
-          echo "--- macOS SDK ---"
-          xcrun --sdk macosx --show-sdk-path
-          xcrun --sdk macosx --show-sdk-version
-          echo "--- Platforms directory ---"
-          ls "$(xcode-select -p)/Platforms/"
-          echo "--- macOS SDKs available ---"
-          ls "$(xcode-select -p)/Platforms/MacOSX.platform/Developer/SDKs/" || echo "MISSING"
-          echo "--- iOS SDKs available ---"
-          ls "$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs/" || echo "MISSING"
-
       - name: Install ldid
         run: brew install ldid
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Set up Rust with iOS target
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios
 
       - name: Free up disk space
         run: |
           ACTIVE_XCODE=$(xcode-select -p | sed 's|/Contents/Developer||')
-          echo "Keeping active Xcode: $ACTIVE_XCODE"
           for x in $(ls -d /Applications/Xcode_*.app 2>/dev/null); do
             if [ "$x" != "$ACTIVE_XCODE" ]; then
-              echo "Removing: $x"
               sudo rm -rf "$x"
             fi
           done
           df -h /
 
-      - name: Update Gecko
-        run: ./tools/development/update-gecko.sh
-
-      - name: Apply patches
-        run: ./tools/development/apply-patches.sh
-
-      - name: Build idevice
+      - name: Run developer build steps
         run: |
-          export SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
-          export IPHONEOS_DEPLOYMENT_TARGET=14.0
-          echo "SDKROOT=$SDKROOT"
+          ./tools/development/update-gecko.sh
+          ./tools/development/apply-patches.sh
           ./tools/development/build-idevice.sh
-
-      - name: Build Gecko
-        run: |
-          unset SDKROOT
-          echo "Letting mach auto-detect SDKs"
           ./tools/development/build-gecko.sh
 
       - name: Build Reynard.app
@@ -94,21 +50,12 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Package as IPA (with ldid pseudo-signing)
+      - name: Package as IPA
         run: |
           mkdir -p Payload
           cp -r build/Build/Products/Release-iphoneos/Reynard.app Payload/
-          # Pseudo-sign main executable
           ldid -S Payload/Reynard.app/Reynard
-          # Pseudo-sign all bundled dylibs (Gecko ships several)
           find Payload/Reynard.app -name "*.dylib" -exec ldid -S {} \;
-          # Pseudo-sign frameworks if any
-          find Payload/Reynard.app -name "*.framework" -type d | while read fw; do
-            fw_name=$(basename "$fw" .framework)
-            if [ -f "$fw/$fw_name" ]; then
-              ldid -S "$fw/$fw_name"
-            fi
-          done
           zip -r Reynard.ipa Payload
           ls -lh Reynard.ipa
 
