@@ -67,6 +67,10 @@ jobs:
           
           ./tools/development/update-gecko.sh
           ./tools/development/apply-patches.sh
+          
+          # Apple's clang doesn't support WASM out of the box. Disable sandboxed libraries.
+          echo "ac_add_options --without-wasm-sandboxed-libraries" >> engine/firefox/.mozconfig
+          
           ./tools/development/build-idevice.sh
           ./tools/development/build-gecko.sh
 
