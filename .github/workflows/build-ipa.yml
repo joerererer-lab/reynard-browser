@@ -19,16 +19,29 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Install ldid and LLVM
+      - name: Install ldid and LLVM 18
         run: |
-          brew install ldid llvm
-          echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+          brew install ldid
+          brew install llvm@18
+          LLVM_PREFIX=$(brew --prefix llvm@18)
+          echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
+          # Ensure ld64.lld exists (Mach-O linker name clang looks for on Darwin)
+          if [ -f "$LLVM_PREFIX/bin/lld" ] && [ ! -e "$LLVM_PREFIX/bin/ld64.lld" ]; then
+            ln -sf "$LLVM_PREFIX/bin/lld" "$LLVM_PREFIX/bin/ld64.lld"
+          fi
 
-      - name: Verify lld is available
+      - name: Show available linker tools
         run: |
-          which lld || true
-          lld --version || true
-          ld.lld --version || true
+          LLVM_PREFIX=$(brew --prefix llvm@18)
+          echo "=== Linker binaries in $LLVM_PREFIX/bin ==="
+          ls -la "$LLVM_PREFIX/bin/" | grep -iE 'ld|link' || true
+          echo "=== Versions ==="
+          which lld && lld --version || true
+          which ld.lld && ld.lld --version || true
+          which ld64.lld && ld64.lld --version || true
+          echo "=== Apple ld ==="
+          xcrun -f ld
+          xcrun ld -v 2>&1 | head -3 || true
 
       - name: Free up disk space
         run: |
