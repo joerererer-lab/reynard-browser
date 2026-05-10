@@ -19,17 +19,29 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      # Just ldid, no LLVM overrides
-      - name: Install ldid
-        run: brew install ldid
+      - name: Install ldid and isolated LLVM Linker
+        run: |
+          brew install ldid llvm@18
+          
+          LLVM_PREFIX=$(brew --prefix llvm@18)
+          
+          # Create a dedicated directory JUST for the linker
+          mkdir -p $HOME/custom-linker
+          
+          # Apple's clang specifically looks for 'ld64.lld' on Darwin platforms
+          # We symlink it here so clang can find it
+          ln -sf "$LLVM_PREFIX/bin/lld" "$HOME/custom-linker/lld"
+          ln -sf "$LLVM_PREFIX/bin/lld" "$HOME/custom-linker/ld64.lld"
+          
+          # Inject ONLY our custom directory into PATH. 
+          # This forces Mozilla to use lld, while preserving Apple's /usr/bin/clang!
+          echo "$HOME/custom-linker" >> $GITHUB_PATH
 
-      # Restored from your original script (Required by Mozilla mach)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      # Restored from your original script (Required to compile Gecko)
       - name: Set up Rust with iOS target
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -47,7 +59,7 @@ jobs:
 
       - name: Run developer build steps
         run: |
-          # The fix to prevent max() iterable SDK detection errors in Mozilla's mach
+          # Prevent max() iterable SDK detection errors in Mozilla's mach
           unset SDKROOT
           
           ./tools/development/update-gecko.sh
