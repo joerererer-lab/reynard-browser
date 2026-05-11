@@ -59,7 +59,6 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
-          echo "Default keychain: $(security default-keychain)"
 
       - name: Free up disk space
         run: |
@@ -71,6 +70,36 @@ jobs:
           done
           df -h /
 
+      - name: Compute cache key inputs
+        id: cache-key
+        run: |
+          HASH=$(find engine/firefox/.mozconfig patches tools/development \
+                 .gitmodules -type f 2>/dev/null | sort | xargs cat 2>/dev/null | shasum -a 256 | cut -c1-16)
+          echo "build-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Cache key hash: $HASH"
+
+      - name: Restore Gecko build cache
+        id: gecko-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.mozbuild
+            engine/firefox/obj-aarch64-apple-ios
+          key: gecko-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-key.outputs.build-hash }}
+          restore-keys: |
+            gecko-build-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            support/idevice/target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Run developer build steps
         run: |
           unset SDKROOT
@@ -78,27 +107,6 @@ jobs:
           ./tools/development/apply-patches.sh
           ./tools/development/build-idevice.sh
           ./tools/development/build-gecko.sh
-
-      - name: Inspect custom Run Script phases (before xcodebuild)
-        run: |
-          PROJECT_PATH=$(find . -type d -iname "reynard.xcodeproj" | head -n 1)
-          echo "=== All shellScript entries in pbxproj ==="
-          python3 -c "
-          import re, sys
-          with open('$PROJECT_PATH/project.pbxproj') as f:
-              content = f.read()
-          # Find shellScript blocks
-          pattern = r'shellScript\s*=\s*\"((?:[^\"\\\\]|\\\\.)*)\"\s*;'
-          matches = re.findall(pattern, content)
-          for i, script in enumerate(matches):
-              decoded = script.encode().decode('unicode_escape')
-              print(f'--- Script {i+1} ---')
-              print(decoded)
-              print()
-          " || echo "Python inspection failed, falling back to grep"
-          echo ""
-          echo "=== Fallback: grep for shellScript ==="
-          grep -A 2 "shellScript" "$PROJECT_PATH/project.pbxproj" | head -200 || true
 
       - name: Build Reynard.app
         run: |
@@ -123,14 +131,6 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
-
-      - name: Show failed script output if build failed
-        if: failure()
-        run: |
-          find build -name "Script-*GECKO*" 2>/dev/null | while read script; do
-            echo "=== $script ==="
-            cat "$script"
-          done
 
       - name: Package as IPA
         run: |
