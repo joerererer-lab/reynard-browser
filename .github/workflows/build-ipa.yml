@@ -28,7 +28,7 @@ jobs:
           ln -sf "$LLVM_PREFIX/bin/lld" "$HOME/custom-linker/ld64.lld"
           echo "$HOME/custom-linker" >> $GITHUB_PATH
 
-      - name: Install full WASI SDK
+      - name: Install WASI SDK
         run: |
           curl -LO https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-arm64-macos.tar.gz
           mkdir -p wasi-sdk
@@ -79,7 +79,6 @@ jobs:
           echo "Cache key hash: $HASH"
 
       - name: Restore Gecko build cache
-        id: gecko-cache
         uses: actions/cache@v4
         with:
           path: |
