@@ -104,6 +104,8 @@ jobs:
           unset SDKROOT
           ./tools/development/update-gecko.sh
           ./tools/development/apply-patches.sh
+          # Enable AUTOCLOBBER so merge-day clobbers don't fail the build
+          echo 'mk_add_options AUTOCLOBBER=1' >> engine/firefox/.mozconfig
           ./tools/development/build-idevice.sh
           ./tools/development/build-gecko.sh
 
