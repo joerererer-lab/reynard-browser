@@ -95,7 +95,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             support/idevice/target
-          key: cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          # Replaced the recursive '**' search with explicit paths to prevent timeouts
+          key: cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'engine/firefox/Cargo.lock', 'support/idevice/Cargo.lock') }}
           restore-keys: |
             cargo-v2-${{ runner.os }}-${{ runner.arch }}-
 
