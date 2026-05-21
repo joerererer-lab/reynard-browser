@@ -74,7 +74,7 @@ jobs:
         id: cache-key
         run: |
           HASH=$(find engine/firefox/.mozconfig patches tools/development \
-                 .gitmodules -type f 2>/dev/null | sort | xargs cat 2>/dev/null | shasum -a 256 | cut -c1-16)
+                  .gitmodules -type f 2>/dev/null | sort | xargs cat 2>/dev/null | shasum -a 256 | cut -c1-16)
           echo "build-hash=$HASH" >> $GITHUB_OUTPUT
           echo "Cache key hash: $HASH"
 
@@ -84,9 +84,10 @@ jobs:
           path: |
             ~/.mozbuild
             engine/firefox/obj-aarch64-apple-ios
-          key: gecko-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-key.outputs.build-hash }}
+          # Busted the cache key with -v2- to bypass the stale clobber file
+          key: gecko-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-key.outputs.build-hash }}
           restore-keys: |
-            gecko-build-${{ runner.os }}-${{ runner.arch }}-
+            gecko-build-v2-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Restore Cargo cache
         uses: actions/cache@v4
@@ -95,9 +96,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             support/idevice/target
-          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          # Busted the cargo cache key with -v2- to keep everything synced and clean
+          key: cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-${{ runner.os }}-${{ runner.arch }}-
+            cargo-v2-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Run developer build steps
         run: |
