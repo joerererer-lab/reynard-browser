@@ -37,18 +37,18 @@ final class HistoryStore {
     
     private let fileManager: FileManager
     private let storage: StorageURLs
-    private let stateQueue = DispatchQueue(label: "me.minh-ton.reynard.history-store", qos: .userInitiated)
+    private let stateQueue = DispatchQueue(label: "com.minh-ton.history-store", qos: .userInitiated)
     private var database: OpaquePointer?
     private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
     
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         
-        guard let documentsDirectoryURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            fatalError("Documents directory is unavailable")
+        guard let applicationSupportDirectoryURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            fatalError("Application Support directory is unavailable")
         }
         
-        let directoryURL = documentsDirectoryURL
+        let directoryURL = applicationSupportDirectoryURL
             .appendingPathComponent("AppData", isDirectory: true)
             .appendingPathComponent("History", isDirectory: true)
         self.storage = StorageURLs(

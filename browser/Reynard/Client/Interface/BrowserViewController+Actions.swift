@@ -1,0 +1,204 @@
+//
+//  BrowserViewController+Actions.swift
+//  Reynard
+//
+//  Created by Minh Ton on 15/5/26.
+//
+
+import GeckoView
+import ObjectiveC
+import UIKit
+
+private enum ActionsAssociatedKeys {
+    static var addonsController = 0
+}
+
+extension BrowserViewController {
+    var addonsController: AddonsController {
+        get {
+            if let controller = objc_getAssociatedObject(self, &ActionsAssociatedKeys.addonsController) as? AddonsController {
+                return controller
+            }
+            
+            let controller = AddonsController(controller: self)
+            objc_setAssociatedObject(self, &ActionsAssociatedKeys.addonsController, controller, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            return controller
+        }
+        set {
+            objc_setAssociatedObject(self, &ActionsAssociatedKeys.addonsController, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+    }
+    func presentMenuSheet(initialSection: LibrarySection = .bookmarks) {
+        let viewController = LibraryViewController(initialSection: initialSection, isPrivateMode: tabManager.selectedTab?.isPrivate == true) { [weak self] in
+            self?.dismiss(animated: true)
+        }
+        let navigationController = UINavigationController(rootViewController: viewController)
+        navigationController.modalPresentationStyle = .pageSheet
+        present(navigationController, animated: true)
+    }
+    
+    func presentShareSheet(url urlString: String? = nil) {
+        let shareURL: URL?
+        if let urlString {
+            shareURL = URL(string: urlString)
+        } else if let tab = tabManager.selectedTab {
+            shareURL = tabManager.shareableURL(for: tab)
+        } else {
+            shareURL = nil
+        }
+        
+        guard let url = shareURL else {
+            return
+        }
+        
+        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+            let sourceView = usesCompactPadChrome ? browserUI.bottomToolbar : (usesPadChrome ? browserUI.topBar.barView : browserUI.bottomToolbar)
+            popover.sourceView = sourceView
+            popover.sourceRect = sourceView.bounds
+        }
+        present(sheet, animated: true)
+    }
+    
+    func showTabOverview() {
+        setTabOverviewVisible(true, animated: true)
+    }
+    
+    func hideTabOverview() {
+        setTabOverviewVisible(false, animated: true)
+    }
+    
+    func createNewTab() {
+        if tabOverviewPresentation.isVisible {
+            let overviewMode = browserUI.tabOverviewCollection.mode
+            prepareOverviewFakeInsertionSlot(for: overviewMode) { [weak self] in
+                guard let self else {
+                    return
+                }
+                _ = self.createTab(selecting: true, isPrivate: overviewMode == .privateTabs)
+            }
+        } else {
+            _ = createTab(selecting: true)
+            setTabOverviewVisible(false, animated: true)
+        }
+    }
+    
+    func dismissKeyboard() {
+        view.endEditing(true)
+    }
+    
+    func goBack() {
+        tabManager.goBack()
+    }
+    
+    func goForward() {
+        tabManager.goForward()
+    }
+    
+    func changeWebsiteMode() {
+        guard let tab = tabManager.selectedTab,
+              let url = tab.url else {
+            return
+        }
+        
+        UserAgentController.shared.changeWebsiteMode(for: url, tabID: tab.id)
+        tab.session.updateUserAgent(UserAgentController.shared.userAgent(for: url, tabID: tab.id))
+        tab.session.reload()
+        refreshAddressBar()
+    }
+    
+    @objc func changeWebsiteModeRequested() {
+        changeWebsiteMode()
+    }
+    
+    func backButtonClicked() {
+        goBack()
+    }
+    
+    func forwardButtonClicked() {
+        goForward()
+    }
+    
+    func shareButtonClicked() {
+        presentShareSheet()
+    }
+    
+    func menuButtonClicked() {
+        presentMenuSheet()
+    }
+    
+    func tabsButtonClicked() {
+        showTabOverview()
+    }
+    
+    @objc func tabsTapped() {
+        showTabOverview()
+    }
+    
+    @objc func doneTapped() {
+        if tabOverviewPresentation.isVisible {
+            let targetMode: TabMode = browserUI.tabOverviewCollection.mode == .privateTabs ? .private : .regular
+            let targetTabs = targetMode == .private ? tabManager.privateTabs : tabManager.regularTabs
+            guard !targetTabs.isEmpty else {
+                return
+            }
+            
+            if tabManager.selectedTabMode != targetMode {
+                var tabIndex: Int?
+                for index in targetTabs.indices {
+                    if tabIndex == nil || targetTabs[index].selectionOrder >= targetTabs[tabIndex!].selectionOrder {
+                        tabIndex = index
+                    }
+                }
+                
+                if let tabIndex {
+                    pendingSelectionAnimation = false
+                    tabManager.selectTab(at: tabIndex, mode: targetMode)
+                }
+            }
+        }
+        hideTabOverview()
+    }
+    
+    @objc func newTabTapped() {
+        createNewTab()
+    }
+    
+    @objc func clearAllTabsTapped() {
+        if tabOverviewPresentation.isVisible,
+           browserUI.tabOverviewCollection.mode == .privateTabs {
+            pendingExpandedTabBarIndex = nil
+            tabManager.removeAllTabs(mode: .private)
+            return
+        }
+        
+        if tabOverviewPresentation.isVisible,
+           browserUI.tabOverviewCollection.mode == .regularTabs {
+            pendingExpandedTabBarIndex = nil
+            tabManager.removeAllTabs(mode: .regular)
+            return
+        }
+        
+        clearAllTabs()
+    }
+    
+    @objc func shareTapped() {
+        presentShareSheet()
+    }
+    
+    @objc func padBackTapped() {
+        goBack()
+    }
+    
+    @objc func padForwardTapped() {
+        goForward()
+    }
+    
+    @objc func topBarMenuTapped() {
+        presentMenuSheet()
+    }
+    
+    @objc func dismissKeyboardTapped() {
+        dismissKeyboard()
+    }
+}

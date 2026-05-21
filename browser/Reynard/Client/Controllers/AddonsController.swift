@@ -20,7 +20,7 @@ final class AddonsController: NSObject, AddonEmbedderDelegate {
     private var sessionBrowserActions: [ObjectIdentifier: [String: AddonAction]] = [:]
     private var sessionPageActions: [ObjectIdentifier: [String: AddonAction]] = [:]
     private let iconCache = NSCache<NSString, UIImage>()
-    private let iconLoadingQueue = DispatchQueue(label: "me.minh-ton.AddonsController.IconLoading", qos: .utility)
+    private let iconLoadingQueue = DispatchQueue(label: "com.minh-ton.addons-controller-icon-queue", qos: .utility)
     private var iconPrefetchIDs = Set<String>()
     
     init(controller: BrowserViewController) {
@@ -55,13 +55,22 @@ final class AddonsController: NSObject, AddonEmbedderDelegate {
         }
         
         if let previousIndex,
-           controller.tabManager.tabs.indices.contains(previousIndex) {
-            controller.tabManager.tabs[previousIndex].session.setAddonTabActive(false)
+           (controller.tabManager.selectedTabMode == .private ? controller.tabManager.privateTabs : controller.tabManager.regularTabs).indices.contains(previousIndex) {
+            (controller.tabManager.selectedTabMode == .private ? controller.tabManager.privateTabs : controller.tabManager.regularTabs)[previousIndex].session.setAddonTabActive(false)
         }
         
-        if controller.tabManager.tabs.indices.contains(selectedIndex) {
-            controller.tabManager.tabs[selectedIndex].session.setAddonTabActive(true)
+        let activeTabs = controller.tabManager.selectedTabMode == .private ? controller.tabManager.privateTabs : controller.tabManager.regularTabs
+        if activeTabs.indices.contains(selectedIndex) {
+            activeTabs[selectedIndex].session.setAddonTabActive(true)
         }
+    }
+    
+    private var addonsInMenu: [Addon] {
+        guard controller?.tabManager.selectedTab?.isPrivate == true else {
+            return AddonsRuntime.shared.installedAddons
+        }
+        
+        return AddonsRuntime.shared.installedAddons.filter { $0.metaData.allowedInPrivateBrowsing }
     }
     
     func visibleMenuItemsForCurrentSite() -> [AddonMenuItem] {
@@ -69,7 +78,7 @@ final class AddonsController: NSObject, AddonEmbedderDelegate {
             return []
         }
         
-        return AddonsRuntime.shared.installedAddons
+        return addonsInMenu
             .filter { addon in
                 visibleActions(for: addon, session: session).isEmpty == false
             }
@@ -176,7 +185,7 @@ final class AddonsController: NSObject, AddonEmbedderDelegate {
                 selecting: true,
                 url: value,
                 windowId: nil,
-                at: self?.controller?.tabManager.tabs.count,
+                at: self?.controller?.tabManager.regularTabs.count,
                 loadURLInApp: true
             )
         }
@@ -333,12 +342,12 @@ final class AddonsController: NSObject, AddonEmbedderDelegate {
             return nil
         }
         
-        let tabIndex = controller.createTab(selecting: selecting, windowId: windowId, at: index)
-        guard controller.tabManager.tabs.indices.contains(tabIndex) else {
+        let tabIndex = controller.createTab(selecting: selecting, windowId: windowId, at: index, isPrivate: false)
+        guard controller.tabManager.regularTabs.indices.contains(tabIndex) else {
             return nil
         }
         
-        let tab = controller.tabManager.tabs[tabIndex]
+        let tab = controller.tabManager.regularTabs[tabIndex]
         if let url = url?.trimmingCharacters(in: .whitespacesAndNewlines),
            !url.isEmpty {
             if loadURLInApp {
@@ -347,7 +356,8 @@ final class AddonsController: NSObject, AddonEmbedderDelegate {
                 tab.pendingDisplayText = url
             }
             
-            if tabIndex == controller.tabManager.selectedTabIndex {
+            if tabIndex == controller.tabManager.selectedTabIndex,
+               controller.tabManager.selectedTabMode == .regular {
                 controller.refreshAddressBar()
             }
         }
@@ -446,7 +456,7 @@ final class AddonsController: NSObject, AddonEmbedderDelegate {
             return
         }
         
-        AddonsRuntime.shared.installedAddons
+        addonsInMenu
             .filter { addon in
                 visibleActions(for: addon, session: session).isEmpty == false
             }

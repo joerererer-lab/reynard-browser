@@ -12,8 +12,8 @@ import UIKit
 final class JITController {
     static let shared = JITController()
     
-    private let attachQueue = DispatchQueue(label: "me.minh-ton.jit.jit-attach-queue", qos: .userInitiated)
-    private let watchdogQueue = DispatchQueue(label: "me.minh-ton.jit.jit-preflight-watchdog", qos: .userInitiated)
+    private let attachQueue = DispatchQueue(label: "com.minh-ton.jit-attach-queue", qos: .userInitiated)
+    private let watchdogQueue = DispatchQueue(label: "com.minh-ton.jit-watchdog-queue", qos: .userInitiated)
     private var attachedPIDs: Set<Int32> = []
     private var preflightWatchdogs: [Int32: DispatchWorkItem] = [:]
     private var hasHandledFailure = false
@@ -59,7 +59,7 @@ final class JITController {
     }
     
     private func isDDIMissing() -> Bool {
-        BrowserPreferences.shared.isJITEnabled && !DDIManager.shared.hasRequiredDDIFiles()
+        Prefs.JITSettings.isJITEnabled && !DDIManager.shared.hasRequiredDDIFiles()
     }
     
     private func shouldAttach(to processType: String) -> Bool {
@@ -100,7 +100,7 @@ final class JITController {
             return
         }
         
-        guard usePtraceJIT() || BrowserPreferences.shared.isJITEnabled else {
+        guard usePtraceJIT() || Prefs.JITSettings.isJITEnabled else {
             ReportJITStatusForChild(pid, false, hasTXM26())
             return
         }
@@ -259,7 +259,7 @@ final class JITController {
     }
     
     private func disableJITAndQuit() {
-        BrowserPreferences.shared.isJITEnabled = false
+        Prefs.JITSettings.isJITEnabled = false
         quitApp()
     }
     
@@ -343,7 +343,7 @@ final class JITController {
     }
     
     @objc private func handleJITDisconnectNotification(_ notification: Notification) {
-        guard BrowserPreferences.shared.isJITEnabled, !isJITLessModeActive else {
+        guard Prefs.JITSettings.isJITEnabled, !isJITLessModeActive else {
             return
         }
         

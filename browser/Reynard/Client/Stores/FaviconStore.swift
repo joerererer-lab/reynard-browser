@@ -63,7 +63,7 @@ final class FaviconStore {
     
     private let fileManager: FileManager
     private let storage: StorageURLs
-    private let stateQueue = DispatchQueue(label: "me.minh-ton.reynard.favicon-store", qos: .utility)
+    private let stateQueue = DispatchQueue(label: "com.minh-ton.favicon-store", qos: .utility)
     
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.default
@@ -95,8 +95,11 @@ final class FaviconStore {
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         
-        let documentsDirectoryURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let directoryURL = documentsDirectoryURL
+        guard let applicationSupportDirectoryURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            fatalError("Application Support directory is unavailable")
+        }
+        
+        let directoryURL = applicationSupportDirectoryURL
             .appendingPathComponent("AppData", isDirectory: true)
             .appendingPathComponent("Favicons", isDirectory: true)
         

@@ -8,6 +8,7 @@
 import Foundation
 import GeckoView
 import UniformTypeIdentifiers
+import MobileCoreServices
 
 extension Notification.Name {
     static let downloadStoreDidChange = Notification.Name("me.minh-ton.reynard.download-store-did-change")
@@ -136,7 +137,7 @@ final class DownloadStore: NSObject {
     
     private let fileManager: FileManager
     private let storage: StorageURLs
-    private let stateQueue = DispatchQueue(label: "me.minh-ton.reynard.download-store-state", qos: .userInitiated)
+    private let stateQueue = DispatchQueue(label: "com.minh-ton.download-store", qos: .userInitiated)
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -157,8 +158,12 @@ final class DownloadStore: NSObject {
             fatalError("Documents directory is unavailable")
         }
         
+        guard let applicationSupportDirectoryURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            fatalError("Application Support directory is unavailable")
+        }
+        
         let downloadsDirectoryURL = documentsDirectoryURL.appendingPathComponent("Downloads", isDirectory: true)
-        let appDataDirectoryURL = documentsDirectoryURL.appendingPathComponent("AppData", isDirectory: true)
+        let appDataDirectoryURL = applicationSupportDirectoryURL.appendingPathComponent("AppData", isDirectory: true)
         let manifestFileURL = appDataDirectoryURL.appendingPathComponent("DownloadStore", isDirectory: false)
         self.storage = StorageURLs(
             downloadsDirectoryURL: downloadsDirectoryURL,
@@ -495,8 +500,15 @@ final class DownloadStore: NSObject {
         
         guard URL(fileURLWithPath: initialName).pathExtension.isEmpty,
               let mimeType,
-              let contentType = UTType(mimeType: mimeType),
-              let preferredExtension = contentType.preferredFilenameExtension else {
+              let contentType = UTTypeCreatePreferredIdentifierForTag(
+                kUTTagClassMIMEType,
+                mimeType as CFString,
+                nil
+              )?.takeRetainedValue(),
+              let preferredExtension = UTTypeCopyPreferredTagWithClass(
+                contentType,
+                kUTTagClassFilenameExtension
+              )?.takeRetainedValue() as String? else {
             return initialName
         }
         
