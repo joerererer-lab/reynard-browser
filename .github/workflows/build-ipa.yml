@@ -70,42 +70,11 @@ jobs:
           done
           df -h /
 
-      - name: Compute cache key inputs
-        id: cache-key
-        run: |
-          HASH=$(find engine/firefox/.mozconfig patches tools/development \
-                  .gitmodules -type f 2>/dev/null | sort | xargs cat 2>/dev/null | shasum -a 256 | cut -c1-16)
-          echo "build-hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Cache key hash: $HASH"
-
-      - name: Restore Gecko build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.mozbuild
-            engine/firefox/obj-aarch64-apple-ios
-          key: gecko-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-key.outputs.build-hash }}
-          restore-keys: |
-            gecko-build-v2-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Restore Cargo cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            support/idevice/target
-          # Replaced the recursive '**' search with explicit paths to prevent timeouts
-          key: cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'engine/firefox/Cargo.lock', 'support/idevice/Cargo.lock') }}
-          restore-keys: |
-            cargo-v2-${{ runner.os }}-${{ runner.arch }}-
-
       - name: Run developer build steps
         run: |
           unset SDKROOT
           ./tools/development/update-gecko.sh
           ./tools/development/apply-patches.sh
-          echo 'mk_add_options AUTOCLOBBER=1' >> engine/firefox/.mozconfig
           ./tools/development/build-idevice.sh
           ./tools/development/build-gecko.sh
 
@@ -120,7 +89,7 @@ jobs:
           echo "Found Xcode project at: $PROJECT_PATH"
           xcodebuild -project "$PROJECT_PATH" -list
           
-          # Added SWIFT_OPTIMIZATION_LEVEL="-Onone" to bypass the Swift compiler crash
+          # Swift compiler crash bypass
           xcodebuild -project "$PROJECT_PATH" \
             -scheme Reynard \
             -configuration Release \
