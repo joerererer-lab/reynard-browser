@@ -34,6 +34,30 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
         return view
     }()
     
+    private lazy var downloadsActionsButton = MakeButtons.makeLibraryActionsButton(
+        target: self,
+        imageName: "ellipsis",
+        action: #selector(downloadsActionsButtonTapped)
+    )
+    private var legacyDownloadsActionsMenuDelegate: LegacyDownloadsActionsMenuDelegate?
+    private lazy var downloadsActionsBarButtonItem: UIBarButtonItem = {
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis"),
+            style: .plain,
+            target: self,
+            action: #selector(downloadsActionsButtonTapped)
+        )
+        item.tag = MakeButtons.downloadsLibraryActionBarButtonTag
+        return item
+    }()
+    private var usesNavigationActionsButton: Bool {
+        if #available(iOS 26.0, *) {
+            return MakeButtons.hasLiquidGlass
+        }
+        
+        return false
+    }
+    
     private lazy var tableView: UITableView = {
         let view = UITableView(frame: .zero, style: .insetGrouped)
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -52,6 +76,7 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
     private let emptyStateView = EmptyDownloadsBackgroundView()
     private var sections: [Section] = []
     private var notificationToken: NSObjectProtocol?
+    private var applicationActiveToken: NSObjectProtocol?
     private var isShowingSwipeActions = false
     private var currentSearchTerm = ""
     private var hasStoredDownloads = false
@@ -66,6 +91,13 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
         
         notificationToken = NotificationCenter.default.addObserver(
             forName: .downloadStoreDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reloadDownloads()
+        }
+        applicationActiveToken = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -97,9 +129,21 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
         tableView.backgroundView?.frame = tableView.bounds
     }
     
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        
+        if window != nil {
+            installNavigationActionsButtonIfNeeded()
+            reloadDownloads()
+        }
+    }
+    
     deinit {
         if let notificationToken {
             NotificationCenter.default.removeObserver(notificationToken)
+        }
+        if let applicationActiveToken {
+            NotificationCenter.default.removeObserver(applicationActiveToken)
         }
     }
     
@@ -138,13 +182,37 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
         headerContainerView.layoutMargins = tableView.layoutMargins
         headerContainerView.addSubview(searchBar)
         searchBar.translatesAutoresizingMaskIntoConstraints = false
-        
-        NSLayoutConstraint.activate([
+        var constraints = [
             searchBar.topAnchor.constraint(equalTo: headerContainerView.layoutMarginsGuide.topAnchor),
             searchBar.leadingAnchor.constraint(equalTo: headerContainerView.layoutMarginsGuide.leadingAnchor),
-            searchBar.trailingAnchor.constraint(equalTo: headerContainerView.layoutMarginsGuide.trailingAnchor),
             searchBar.bottomAnchor.constraint(equalTo: headerContainerView.bottomAnchor),
-        ])
+        ]
+        
+        if usesNavigationActionsButton {
+            constraints.append(searchBar.trailingAnchor.constraint(equalTo: headerContainerView.layoutMarginsGuide.trailingAnchor))
+        } else {
+            headerContainerView.addSubview(downloadsActionsButton)
+            downloadsActionsButton.translatesAutoresizingMaskIntoConstraints = false
+            
+            if #available(iOS 14.0, *) {
+                downloadsActionsButton.menu = makeDownloadsActionsMenu()
+                downloadsActionsButton.showsMenuAsPrimaryAction = true
+            } else if #available(iOS 13.0, *) {
+                let delegate = LegacyDownloadsActionsMenuDelegate(owner: self)
+                downloadsActionsButton.addInteraction(UIContextMenuInteraction(delegate: delegate))
+                legacyDownloadsActionsMenuDelegate = delegate
+            }
+            
+            constraints.append(contentsOf: [
+                searchBar.trailingAnchor.constraint(equalTo: downloadsActionsButton.leadingAnchor),
+                downloadsActionsButton.trailingAnchor.constraint(equalTo: headerContainerView.trailingAnchor, constant: -20),
+                downloadsActionsButton.centerYAnchor.constraint(equalTo: searchBar.searchTextField.centerYAnchor),
+                downloadsActionsButton.widthAnchor.constraint(equalTo: downloadsActionsButton.heightAnchor),
+                downloadsActionsButton.heightAnchor.constraint(equalTo: searchBar.searchTextField.heightAnchor),
+            ])
+        }
+        
+        NSLayoutConstraint.activate(constraints)
         
         let targetWidth = bounds.width > 0 ? bounds.width : UIScreen.main.bounds.width
         headerContainerView.frame = CGRect(x: 0, y: 0, width: targetWidth, height: 0)
@@ -167,6 +235,82 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
     
     @objc private func handleBackgroundTap() {
         searchBar.resignFirstResponder()
+    }
+    
+    @objc private func downloadsActionsButtonTapped() {
+        if #available(iOS 13.0, *) {
+            if #unavailable(iOS 14.0) {
+                presentLegacyDownloadsActionsMenu()
+            }
+        }
+    }
+    
+    @available(iOS 13.0, *)
+    private func presentLegacyDownloadsActionsMenu() {
+        guard let interaction = downloadsActionsButton.interactions.compactMap({ $0 as? UIContextMenuInteraction }).first else {
+            return
+        }
+        
+        let selector = NSSelectorFromString("_presentMenuAtLocation:")
+        guard interaction.responds(to: selector) else {
+            return
+        }
+        
+        let center = NSValue(cgPoint: CGPoint(x: downloadsActionsButton.bounds.midX, y: downloadsActionsButton.bounds.midY))
+        _ = interaction.perform(selector, with: center)
+    }
+    
+    fileprivate func makeDownloadsActionsMenu() -> UIMenu {
+        UIMenu(title: "", children: [
+            UIAction(title: "Open Downloads Folder", image: UIImage(systemName: "folder")) { [weak self] _ in
+                self?.openDownloadsFolder()
+            },
+            UIAction(title: "Clear Downloads History", image: UIImage(named: "arrow.down.circle.badge.xmark")) { [weak self] _ in
+                self?.presentClearDownloadsHistory()
+            },
+        ])
+    }
+    
+    private func openDownloadsFolder() {
+        guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+        
+        let downloadsURL = documentsURL.appendingPathComponent("Downloads", isDirectory: true)
+        let encodedPath = downloadsURL.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        guard let filesURL = URL(string: "shareddocuments://\(encodedPath)") else {
+            return
+        }
+        
+        UIApplication.shared.open(filesURL, options: [:], completionHandler: nil)
+    }
+    
+    private func presentClearDownloadsHistory() {
+        guard let viewController = nearestViewController else {
+            return
+        }
+        
+        let clearViewController = ClearDownloadsViewController { startDate in
+            DownloadStore.shared.clearDownloadHistory(since: startDate)
+        }
+        let navigationController = UINavigationController(rootViewController: clearViewController)
+        navigationController.modalPresentationStyle = .pageSheet
+        viewController.present(navigationController, animated: true)
+    }
+    
+    private func installNavigationActionsButtonIfNeeded() {
+        guard usesNavigationActionsButton,
+              let navigationItem = nearestViewController?.navigationController?.topViewController?.navigationItem else {
+            return
+        }
+        
+        downloadsActionsBarButtonItem.tintColor = .label
+        if #available(iOS 14.0, *) {
+            downloadsActionsBarButtonItem.menu = makeDownloadsActionsMenu()
+            downloadsActionsBarButtonItem.target = nil
+            downloadsActionsBarButtonItem.action = nil
+        }
+        MakeButtons.installLibraryActionBarButton(downloadsActionsBarButtonItem, in: navigationItem)
     }
     
     private func updateHeaderFittingHeight() {
@@ -363,6 +507,7 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
         lhs.fileName == rhs.fileName &&
         lhs.fileURL == rhs.fileURL &&
         lhs.state == rhs.state &&
+        lhs.fileExists == rhs.fileExists &&
         lhs.totalBytes == rhs.totalBytes &&
         lhs.downloadedBytes == rhs.downloadedBytes &&
         lhs.bytesPerSecond == rhs.bytesPerSecond
@@ -437,7 +582,35 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
                 completion(true)
             }
             
-            let configuration = UISwipeActionsConfiguration(actions: [deleteAction])
+            guard item.fileExists else {
+                let configuration = UISwipeActionsConfiguration(actions: [deleteAction])
+                configuration.performsFirstActionWithFullSwipe = true
+                return configuration
+            }
+            
+            let shareAction = UIContextualAction(style: .normal, title: "Share") { [weak self] _, _, completion in
+                guard let self else {
+                    completion(false)
+                    return
+                }
+                
+                self.presentShareSheet(for: item, from: indexPath)
+                completion(true)
+            }
+            shareAction.backgroundColor = .systemGreen
+            
+            let openAction = UIContextualAction(style: .normal, title: "Open in\nFiles") { [weak self] _, _, completion in
+                guard let self else {
+                    completion(false)
+                    return
+                }
+                
+                self.openDownloadedFile(item)
+                completion(true)
+            }
+            openAction.backgroundColor = .systemBlue
+            
+            let configuration = UISwipeActionsConfiguration(actions: [deleteAction, shareAction, openAction])
             configuration.performsFirstActionWithFullSwipe = true
             return configuration
         }
@@ -450,11 +623,11 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
         
         tableView.deselectRow(at: indexPath, animated: true)
         
-        guard item.state == .completed else {
+        guard item.state == .completed, item.fileExists else {
             return
         }
         
-        presentShareSheet(for: item, from: indexPath)
+        openDownloadedFile(item)
     }
     
     func tableView(_ tableView: UITableView, willBeginEditingRowAt indexPath: IndexPath) {
@@ -529,8 +702,42 @@ final class DownloadsManagerView: UIView, UITableViewDataSource, UITableViewDele
         viewController.present(sheet, animated: true)
     }
     
+    private func openDownloadedFile(_ item: DownloadItemSnapshot) {
+        guard let fileURL = item.fileURL else {
+            return
+        }
+        
+        let encodedPath = fileURL.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        guard let filesURL = URL(string: "shareddocuments://\(encodedPath)") else {
+            return
+        }
+        
+        UIApplication.shared.open(filesURL, options: [:], completionHandler: nil)
+    }
+    
     private var nearestViewController: UIViewController? {
         sequence(first: next, next: { $0?.next }).first { $0 is UIViewController } as? UIViewController
+    }
+}
+
+private final class LegacyDownloadsActionsMenuDelegate: NSObject, UIContextMenuInteractionDelegate {
+    weak var owner: DownloadsManagerView?
+    
+    init(owner: DownloadsManagerView) {
+        self.owner = owner
+    }
+    
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction,
+        configurationForMenuAtLocation location: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard let owner else {
+            return nil
+        }
+        
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            owner.makeDownloadsActionsMenu()
+        }
     }
 }
 

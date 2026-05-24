@@ -8,6 +8,11 @@
 import UIKit
 
 extension SettingsRootViewController {
+    var installedThroughTrollStore: Bool {
+        let tsPath = Bundle.main.bundlePath + "/../_TrollStore"
+        return access(tsPath, F_OK) == 0
+    }
+    
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         guard visibleSections.indices.contains(indexPath.section),
               visibleSections[indexPath.section] == .updates,
@@ -86,6 +91,7 @@ extension SettingsRootViewController {
         textView.isSelectable = false
         textView.backgroundColor = .clear
         textView.attributedText = releaseNotes
+        textView.textColor = .label
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 0, right: 0)
         textView.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: 16, right: 0)
         textView.textContainer.lineFragmentPadding = 0
@@ -115,6 +121,29 @@ extension SettingsRootViewController {
         ])
         
         return cell
+    }
+    
+    func makeTrollStoreUpdateFooterView() -> UIView {
+        let footerView = UITableViewHeaderFooterView(reuseIdentifier: nil)
+        footerView.contentView.preservesSuperviewLayoutMargins = true
+        
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 0
+        label.font = UIFont.preferredFont(forTextStyle: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.text = "Make sure TrollStore's URL Scheme is enabled."
+        
+        footerView.contentView.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: footerView.contentView.layoutMarginsGuide.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: footerView.contentView.layoutMarginsGuide.trailingAnchor),
+            label.topAnchor.constraint(equalTo: footerView.contentView.layoutMarginsGuide.topAnchor),
+            label.bottomAnchor.constraint(equalTo: footerView.contentView.layoutMarginsGuide.bottomAnchor),
+        ])
+        
+        return footerView
     }
     
     func makeUpdateNowCell() -> UITableViewCell {
@@ -249,34 +278,35 @@ extension SettingsRootViewController {
             return
         }
         
-        let isTrollStore = getEntitlementValue("com.apple.private.security.no-sandbox")
-        
-        if isTrollStore {
+        let expectedSize = latestEntry["size"] as? Int
+        if installedThroughTrollStore {
             let tsURLStr = downloadURLStr.replacingOccurrences(of: "Reynard.ipa", with: "Reynard-TrollStore.tipa")
-            _ = tsURLStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? tsURLStr
-            /*
-             if let schemeURL = URL(string: "apple-magnifier://install?url=" + encoded),
-             UIApplication.shared.canOpenURL(schemeURL) {
-             UIApplication.shared.open(schemeURL)
-             return
-             }
-             */
-            guard let tsURL = URL(string: tsURLStr) else { return }
-            startUpdateDownload(
-                from: tsURL,
-                fileName: "Reynard-TrollStore.tipa",
-                message: "When the download finishes, choose TrollStore in the share sheet to install the update."
-            )
+            let encoded = tsURLStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? tsURLStr
+            
+            if let schemeURL = URL(string: "apple-magnifier://install?url=" + encoded),
+               UIApplication.shared.canOpenURL(schemeURL) {
+                UIApplication.shared.open(schemeURL)
+                return
+            }
         } else {
             startUpdateDownload(
                 from: downloadURL,
                 fileName: "Reynard.ipa",
+                expectedSize: expectedSize,
                 message: "When the download finishes, choose the app that you used to sideload Reynard in the share sheet to install the update."
             )
         }
     }
     
-    private func startUpdateDownload(from url: URL, fileName: String, message: String) {
+    private func startUpdateDownload(from url: URL, fileName: String, expectedSize: Int?, message: String) {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let dest = docs.appendingPathComponent(fileName)
+        
+        if isCurrentDownloadedUpdate(at: dest, expectedSize: expectedSize) {
+            presentDownloadedUpdate(at: dest)
+            return
+        }
+        
         let alert = UIAlertController(
             title: "Downloading Update",
             message: message,
@@ -301,18 +331,10 @@ extension SettingsRootViewController {
                     return
                 }
                 guard let location else { return }
-                guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-                let dest = docs.appendingPathComponent(fileName)
                 try? FileManager.default.removeItem(at: dest)
                 try? FileManager.default.moveItem(at: location, to: dest)
                 self?.dismissAlertIfPresented(alert) {
-                    let activity = UIActivityViewController(activityItems: [dest], applicationActivities: nil)
-                    if let popover = activity.popoverPresentationController {
-                        popover.sourceView = self?.view
-                        popover.sourceRect = CGRect(x: self?.view.bounds.midX ?? 0, y: self?.view.bounds.midY ?? 0, width: 0, height: 0)
-                        popover.permittedArrowDirections = []
-                    }
-                    self?.present(activity, animated: true)
+                    self?.presentDownloadedUpdate(at: dest)
                 }
             }
         }
@@ -334,5 +356,24 @@ extension SettingsRootViewController {
             }
             task.resume()
         }
+    }
+    
+    private func isCurrentDownloadedUpdate(at fileURL: URL, expectedSize: Int?) -> Bool {
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let expectedSize,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+              let cachedSize = attributes[.size] as? NSNumber else { return false }
+        
+        return cachedSize.int64Value == Int64(expectedSize)
+    }
+    
+    private func presentDownloadedUpdate(at fileURL: URL) {
+        let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+        if let popover = activity.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+        present(activity, animated: true)
     }
 }
