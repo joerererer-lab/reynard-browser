@@ -69,6 +69,10 @@ extension BrowserViewController {
     }
     
     func createNewTab() {
+        browserUI.addressBar.resetOverlayState()
+        restoreSearchChrome(clearSuggestions: true)
+        view.endEditing(true)
+        
         if tabOverviewPresentation.isVisible {
             let overviewMode = browserUI.tabOverviewCollection.mode
             prepareOverviewFakeInsertionSlot(for: overviewMode) { [weak self] in
@@ -84,6 +88,12 @@ extension BrowserViewController {
     }
     
     func dismissKeyboard() {
+        if isSearchScrollMode && searchViewController.parent != nil {
+            restoreSearchChrome(clearSuggestions: true)
+            return
+        }
+        
+        browserUI.addressBar.resetOverlayState()
         view.endEditing(true)
     }
     
@@ -97,13 +107,22 @@ extension BrowserViewController {
     
     func changeWebsiteMode() {
         guard let tab = tabManager.selectedTab,
-              let url = tab.url else {
+              let url = tab.url,
+              let navigationAction = GeckoSessionController.shared.changeWebsiteMode(for: url, tabID: tab.id) else {
             return
         }
         
-        UserAgentController.shared.changeWebsiteMode(for: url, tabID: tab.id)
-        tab.session.updateUserAgent(UserAgentController.shared.userAgent(for: url, tabID: tab.id))
-        tab.session.reload()
+        switch navigationAction {
+        case .reload:
+            tab.session.updateSettings(GeckoSessionController.shared.sessionSettings(for: url, tabID: tab.id))
+            tab.session.reload()
+        case let .load(overrideURL):
+            tab.pendingDisplayText = overrideURL
+            tab.suppressInitialNavigation = false
+            tab.session.updateSettings(GeckoSessionController.shared.sessionSettings(for: overrideURL, tabID: tab.id))
+            tab.session.load(overrideURL, flags: GeckoSessionLoadFlags.replaceHistory)
+        }
+        
         refreshAddressBar()
     }
     
@@ -208,6 +227,19 @@ extension BrowserViewController {
         }
         
         addonController.presentCurrentSiteSettings(for: item)
+    }
+    
+    @objc func presentWebsiteSettingsRequested() {
+        guard let selectedTab = tabManager.selectedTab,
+              let urlString = selectedTab.url?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let url = URL(string: urlString),
+              let viewController = SiteSettingsViewController(url: url, session: selectedTab.session) else {
+            return
+        }
+        
+        let navigationController = UINavigationController(rootViewController: viewController)
+        navigationController.modalPresentationStyle = .pageSheet
+        present(navigationController, animated: true)
     }
     
     @objc func presentAddBookmarkRequested(_ notification: Notification) {

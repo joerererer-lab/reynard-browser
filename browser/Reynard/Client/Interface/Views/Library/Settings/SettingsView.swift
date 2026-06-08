@@ -5,6 +5,7 @@
 //  Created by Minh Ton on 9/3/26.
 //
 
+import GeckoView
 import UIKit
 
 class SettingsTableViewController: UITableViewController {
@@ -23,6 +24,7 @@ final class SettingsRootViewController: SettingsTableViewController {
         case updates
         case jit
         case general
+        case privacy
         case about
     }
     
@@ -32,6 +34,10 @@ final class SettingsRootViewController: SettingsTableViewController {
         case search
         case appearance
         case compatibility
+    }
+    
+    enum PrivacyRow: CaseIterable {
+        case sitePermissions
     }
     
     var visibleSections: [Section] {
@@ -104,6 +110,7 @@ final class SettingsRootViewController: SettingsTableViewController {
         case .updates: return 2
         case .jit: return 2
         case .general: return GeneralRow.allCases.count
+        case .privacy: return PrivacyRow.allCases.count
         case .about: return 5
         }
     }
@@ -136,6 +143,8 @@ final class SettingsRootViewController: SettingsTableViewController {
             return cell
         case .general:
             return makeGeneralCell(for: indexPath)
+        case .privacy:
+            return makePrivacyCell(for: indexPath)
         case .about:
             let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
             switch indexPath.row {
@@ -151,9 +160,7 @@ final class SettingsRootViewController: SettingsTableViewController {
                 return cell
             case 1:
                 cell.textLabel?.text = "Engine Version"
-                let info = Bundle.main.infoDictionary
-                let geckoTag = info?["GeckoVersion"] as? String ?? "Unknown"
-                cell.detailTextLabel?.text = geckoTag
+                cell.detailTextLabel?.text = GeckoRuntime.version
                 cell.detailTextLabel?.textColor = .secondaryLabel
                 cell.selectionStyle = .none
                 cell.accessoryType = .none
@@ -179,6 +186,8 @@ final class SettingsRootViewController: SettingsTableViewController {
             presentPairingFilePicker()
         case .general:
             handleGeneralSelection(at: indexPath)
+        case .privacy:
+            handlePrivacySelection(at: indexPath)
         case .about:
             let url: URL?
             switch indexPath.row {
@@ -200,6 +209,7 @@ final class SettingsRootViewController: SettingsTableViewController {
         case .updates: return "Update Available"
         case .jit: return "JIT"
         case .general: return "General"
+        case .privacy: return "Privacy"
         case .about: return "About"
         }
     }
@@ -272,6 +282,34 @@ private extension SettingsRootViewController {
             navigationController?.pushViewController(AppearancePreferencesViewController(), animated: true)
         case .compatibility:
             navigationController?.pushViewController(CompatibilityPreferencesViewController(), animated: true)
+        }
+    }
+    
+    func makePrivacyCell(for indexPath: IndexPath) -> UITableViewCell {
+        let rows = PrivacyRow.allCases
+        guard rows.indices.contains(indexPath.row) else {
+            return UITableViewCell()
+        }
+        
+        let row = rows[indexPath.row]
+        switch row {
+        case .sitePermissions:
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.textLabel?.text = "Site Permissions"
+            cell.accessoryType = .disclosureIndicator
+            return cell
+        }
+    }
+    
+    func handlePrivacySelection(at indexPath: IndexPath) {
+        let rows = PrivacyRow.allCases
+        guard rows.indices.contains(indexPath.row) else {
+            return
+        }
+        
+        switch rows[indexPath.row] {
+        case .sitePermissions:
+            navigationController?.pushViewController(SitePermissionsViewController(), animated: true)
         }
     }
 }

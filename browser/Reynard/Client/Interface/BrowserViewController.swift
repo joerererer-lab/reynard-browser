@@ -10,8 +10,21 @@ import UIKit
 
 final class BrowserViewController: UIViewController {
     lazy var tabManager: TabManager = TabManagerImplementation(delegate: self)
-    private(set) var isInFullscreenMedia = false
     private var orientationBeforeFullscreen: UIInterfaceOrientation?
+    
+    private(set) var isInFullscreenMedia = false {
+        didSet {
+            setNeedsStatusBarAppearanceUpdate()
+        }
+    }
+    
+    override var prefersStatusBarHidden: Bool {
+        return isInFullscreenMedia
+    }
+    
+    override var childForStatusBarHidden: UIViewController? {
+        shouldEmbedSidebarContainer ? embeddedSplitController : nil
+    }
     
     init(isSidebarContainerHost: Bool = true) {
         super.init(nibName: nil, bundle: nil)
@@ -64,6 +77,12 @@ final class BrowserViewController: UIViewController {
         )
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(presentWebsiteSettingsRequested),
+            name: AddressBarMenu.presentWebsiteSettingsNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(presentAddBookmarkRequested(_:)),
             name: AddressBarMenu.addBookmarkNotification,
             object: nil
@@ -97,6 +116,8 @@ final class BrowserViewController: UIViewController {
                 return
             }
             
+            SitePermissionController.shared.attach(controller: self)
+            SitePermissionController.shared.start()
             await self.addonController.start()
             self.tabManager.selectedTab?.session.setAddonTabActive(true)
         }
@@ -141,6 +162,7 @@ final class BrowserViewController: UIViewController {
         syncSidebarButtonItem()
         refreshAddressBar()
         browserUI.applyChromeLayout(animated: false)
+        updateSuggestionsLayoutIfNeeded()
         browserUI.tabOverviewCollection.tabsCollection.collectionViewLayout.invalidateLayout()
         browserUI.tabOverviewCollection.privateTabsCollection.collectionViewLayout.invalidateLayout()
         browserUI.tabBar.collectionView.collectionViewLayout.invalidateLayout()
@@ -170,6 +192,7 @@ final class BrowserViewController: UIViewController {
                     return
                 }
                 self.browserUI.applyChromeLayout(animated: false)
+                self.updateSuggestionsLayoutIfNeeded()
             }
         }
     }

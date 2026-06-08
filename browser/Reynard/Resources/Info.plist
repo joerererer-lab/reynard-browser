@@ -15,8 +15,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>GeckoVersion</key>
-	<string>$(GECKO_VERSION)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -42,5 +40,33 @@
 	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Firefox Add-on Package</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.mozilla.xpi-extension</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>xpi</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-xpinstall</string>
+					<string>application/zip</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

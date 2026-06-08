@@ -45,6 +45,14 @@ final class AddonsPreferencesViewController: SettingsTableViewController {
         return sections
     }
     
+    private var visibleAddonCount: Int {
+        installedAddons.count + unsupportedAddons.count
+    }
+    
+    private var shouldShowUpdateAction: Bool {
+        visibleAddonCount > 0
+    }
+    
     private var updateActionTitle: String {
         if isUpdatingAddons {
             return "Updating Add-ons..."
@@ -98,7 +106,7 @@ final class AddonsPreferencesViewController: SettingsTableViewController {
         case .unsupported:
             return unsupportedAddons.count
         case .more:
-            return 3
+            return shouldShowUpdateAction ? 3 : 2
         }
     }
     
@@ -129,6 +137,7 @@ final class AddonsPreferencesViewController: SettingsTableViewController {
             cell.detailTextLabel?.textColor = .secondaryLabel
             cell.accessoryType = .disclosureIndicator
             cell.imageView?.image = Self.sharedIconCache.object(forKey: addon.id as NSString) ?? UIImage(systemName: "puzzlepiece.extension")
+            applyVisualState(to: cell, for: addon)
             loadIconIfNeeded(for: addon)
             return cell
         case .unsupported:
@@ -144,6 +153,7 @@ final class AddonsPreferencesViewController: SettingsTableViewController {
             cell.detailTextLabel?.textColor = .secondaryLabel
             cell.accessoryType = .disclosureIndicator
             cell.imageView?.image = Self.sharedIconCache.object(forKey: addon.id as NSString) ?? UIImage(systemName: "puzzlepiece.extension")
+            applyVisualState(to: cell, for: addon)
             loadIconIfNeeded(for: addon)
             return cell
         case .more:
@@ -227,6 +237,9 @@ final class AddonsPreferencesViewController: SettingsTableViewController {
         guard visibleSections.indices.contains(section), visibleSections[section] == .more else {
             return nil
         }
+        guard shouldShowUpdateAction else {
+            return nil
+        }
         if let footerSummaryText {
             return footerSummaryText
         }
@@ -300,9 +313,21 @@ final class AddonsPreferencesViewController: SettingsTableViewController {
     private func presentAddonFilePicker() {
         let picker: UIDocumentPickerViewController
         if #available(iOS 14.0, *) {
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: Self.allowedAddonFileTypes(), asCopy: true)
+            picker = UIDocumentPickerViewController(
+                forOpeningContentTypes: [
+                    UTType(importedAs: "org.mozilla.xpi-extension"),
+                    .zip,
+                ],
+                asCopy: true
+            )
         } else {
-            picker = UIDocumentPickerViewController(documentTypes: Self.allowedAddonDocumentTypeIdentifiers(), in: .import)
+            picker = UIDocumentPickerViewController(
+                documentTypes: [
+                    "org.mozilla.xpi-extension",
+                    kUTTypeZipArchive as String,
+                ],
+                in: .import
+            )
         }
         if #available(iOS 13.0, *) {
             picker.shouldShowFileExtensions = true
@@ -345,32 +370,6 @@ final class AddonsPreferencesViewController: SettingsTableViewController {
                 }
             }
         }
-    }
-    
-    @available(iOS 14.0, *)
-    private static func allowedAddonFileTypes() -> [UTType] {
-        if let xpiType = UTType(filenameExtension: "xpi") {
-            return [xpiType]
-        }
-        
-        return [UTType(importedAs: "org.mozilla.xpi-extension")]
-    }
-    
-    private static func allowedAddonDocumentTypeIdentifiers() -> [String] {
-        var identifiers: [String] = []
-        
-        ["xpi"].forEach { ext in
-            if let typeIdentifier = UTTypeCreatePreferredIdentifierForTag(
-                kUTTagClassFilenameExtension,
-                ext as CFString,
-                nil
-            )?.takeRetainedValue() as String?,
-               !identifiers.contains(typeIdentifier) {
-                identifiers.append(typeIdentifier)
-            }
-        }
-        
-        return identifiers
     }
     
     private static func stageAddonPackage(from sourceURL: URL) throws -> URL {
@@ -438,6 +437,19 @@ final class AddonsPreferencesViewController: SettingsTableViewController {
             return "Unsupported"
         }
         return nil
+    }
+    
+    private func applyVisualState(to cell: UITableViewCell, for addon: Addon) {
+        guard addon.metaData.enabled == false else {
+            cell.textLabel?.textColor = .label
+            cell.detailTextLabel?.textColor = .secondaryLabel
+            cell.imageView?.alpha = 1
+            return
+        }
+        
+        cell.textLabel?.textColor = .secondaryLabel
+        cell.detailTextLabel?.textColor = .tertiaryLabel
+        cell.imageView?.alpha = 0.5
     }
     
     private func resetDisplayedUpdateState() {
